@@ -13,7 +13,8 @@
 #include <ctype.h>
 #include <getopt.h>
 #include "cintelhex.h"
-
+#include "canfestival.h"
+#include "lpc11cxx_bl.h"
 
 #define SW_VERSION  1.0
 
@@ -33,6 +34,7 @@ int main(int argc, char *argv[])
     int canspeed = 125000;
     int nodeid   = 0x7d;
     int tmparg;
+
     while ((c = getopt (argc, argv, "s:n:v")) != -1)
     {
         switch (c)
@@ -86,7 +88,24 @@ int main(int argc, char *argv[])
     }
     if(optind < argc)
     {
-        printf("parsing file %s...\n",argv[optind]);
+    	char * filename = argv[optind];
+    	ihex_recordset_t * ihexrec;
+    	ulong_t size = 0;
+        printf("parsing file %s...\n",filename);
+        ihexrec = ihex_rs_from_file(filename);
+        if(ihexrec != NULL)
+        {
+        	size = ihex_rs_get_size(ihexrec);
+        }
+        if(size == 0)
+        {
+        	printf("Invalid file!\n");
+        	return EXIT_FAILURE;
+        }else
+        {
+        	uint_t no_records = ihexrec->ihrs_count;
+        	printf("File contains %d bytes of ROM data in %d records.\n", (int)size, no_records);
+        }
     }else
     {
         fusage();

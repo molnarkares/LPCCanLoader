@@ -4,15 +4,15 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../src/lpc11cxx.c \
+../src/lpc11cxx_bl.c \
 ../src/lpc2can.c 
 
 OBJS += \
-./src/lpc11cxx.o \
+./src/lpc11cxx_bl.o \
 ./src/lpc2can.o 
 
 C_DEPS += \
-./src/lpc11cxx.d \
+./src/lpc11cxx_bl.d \
 ./src/lpc2can.d 
 
 
