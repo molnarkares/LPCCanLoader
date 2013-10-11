@@ -12,11 +12,14 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <signal.h>
 #include "cintelhex.h"
 #include "canfestival.h"
 #include "lpc11cxx_bl.h"
 
 #define SW_VERSION  1.0
+
+static ulong_t check_ihex(ihex_recordset_t *);
 
 static void fusage() {
     printf("LPC via CAN programmer\n");
@@ -26,8 +29,21 @@ static void fusage() {
     printf("Example: lpc2can -s 125 -n 7d sample.hex\n");
 }
 
+void catch_signal(int sig)
+{
+  signal(SIGTERM, catch_signal);
+  signal(SIGINT, catch_signal);
+
+  printf("Got Signal %d\n",sig);
+}
+
+s_BOARD MasterBoard = {"LPCBUS", "125K"};
+
 int main(int argc, char *argv[])
 {
+
+
+
     int c,index;
     opterr = 0;
     char *cvalue = NULL;
@@ -90,22 +106,15 @@ int main(int argc, char *argv[])
     {
     	char * filename = argv[optind];
     	ihex_recordset_t * ihexrec;
-    	ulong_t size = 0;
+    	ulong_t size;
         printf("parsing file %s...\n",filename);
         ihexrec = ihex_rs_from_file(filename);
-        if(ihexrec != NULL)
+        size = check_ihex(ihexrec);
+        if(size== 0)
         {
-        	size = ihex_rs_get_size(ihexrec);
-        }
-        if(size == 0)
-        {
-        	printf("Invalid file!\n");
         	return EXIT_FAILURE;
-        }else
-        {
-        	uint_t no_records = ihexrec->ihrs_count;
-        	printf("File contains %d bytes of ROM data in %d records.\n", (int)size, no_records);
         }
+    	printf("File contains %d bytes of ROM data.\n", (int)size);
     }else
     {
         fusage();
@@ -114,3 +123,32 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
+static ulong_t check_ihex(ihex_recordset_t * rset)
+{
+	uint_t no_records = rset->ihrs_count;
+	ulong_t size = 0;
+	ihex_addr_t last_address = 0;
+	int ctr;
+	if(rset == NULL)
+	{
+		printf("Invalid HEX record file.\n");
+		return 0;
+	}
+	size = ihex_rs_get_size(rset);
+	last_address = rset->ihrs_records[0].ihr_address;
+	printf("Verifying record continuity...\n");
+	for(ctr = 0; ctr < no_records;ctr++)
+	{
+		if(rset->ihrs_records[ctr].ihr_type == IHEX_DATA)
+		{
+			if(last_address != rset->ihrs_records[ctr].ihr_address)
+			{
+				printf("Hex record is not continuous at address 0x%x",rset->ihrs_records[ctr].ihr_address);
+				return 0;
+			}
+			last_address += rset->ihrs_records[ctr].ihr_length;
+		}
+	}
+	printf("Record is continuous.\n");
+	return size;
+}
