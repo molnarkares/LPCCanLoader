@@ -12,46 +12,33 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <getopt.h>
-#include <signal.h>
+
 #include "cintelhex.h"
-#include "canfestival.h"
-#include "lpc11cxx_bl.h"
+
+
 
 #define SW_VERSION  1.0
 
 static ulong_t check_ihex(ihex_recordset_t *);
+extern int download_ihex(uint8_t *, int,char*,uint8_t,char*);
 
-static void fusage() {
-    printf("LPC via CAN programmer\n");
-    printf("(c) Lyorak 2013\n");
-    printf("Using 3rd party software. See licenses\n");
-    printf("Usage: lpc2can [-s speed] [-n node] file.hex\n");
-    printf("Example: lpc2can -s 125 -n 7d sample.hex\n");
-}
+static void fusage();
 
-void catch_signal(int sig)
-{
-  signal(SIGTERM, catch_signal);
-  signal(SIGINT, catch_signal);
-
-  printf("Got Signal %d\n",sig);
-}
-
-s_BOARD MasterBoard = {"LPCBUS", "125K"};
 
 int main(int argc, char *argv[])
 {
 
 
 
-    int c,index;
+    int c;
     opterr = 0;
     char *cvalue = NULL;
-    int canspeed = 125000;
-    int nodeid   = 0x7d;
+    char* canspeed = "125K";
+    char* LibraryPath="libcanfestival_can_virtual.so";
+    uint8_t nodeid   = 0x7d;
     int tmparg;
 
-    while ((c = getopt (argc, argv, "s:n:v")) != -1)
+    while ((c = getopt (argc, argv, "l:s:n:v")) != -1)
     {
         switch (c)
         {
@@ -61,23 +48,19 @@ int main(int argc, char *argv[])
             return EXIT_SUCCESS;
 
         case 's':
-            cvalue = optarg;
-            tmparg = (int)strtol(cvalue, NULL, 10);
-            if((tmparg >= 125) && (tmparg <=1000))
-            {
-                canspeed = tmparg*1000;
-                printf("Setting CAN speed to %d kbps\n",tmparg);
-            }else
-            {
-                fprintf (stderr, "Invalid speed argument %s\n",cvalue);
-            }
+        	canspeed = optarg;
+            printf("Setting CAN speed to %sbps.\n",canspeed);
+            break;
+        case 'l':
+        	LibraryPath = optarg;
+            printf("Using CAN driver library %s.\n",LibraryPath);
             break;
         case 'n':
             cvalue = optarg;
             tmparg = (int)strtol(cvalue, NULL, 16);
             if((tmparg >= 0) && (tmparg <=0xff))
             {
-                nodeid= tmparg;
+                nodeid= (uint8_t)tmparg;
                 printf("Setting Node ID to 0x%x\n",tmparg);
             }else
             {
@@ -105,16 +88,33 @@ int main(int argc, char *argv[])
     if(optind < argc)
     {
     	char * filename = argv[optind];
+    	uint8_t * databuffer;
     	ihex_recordset_t * ihexrec;
-    	ulong_t size;
+    	ulong_t record_size,downloaded_size;
         printf("parsing file %s...\n",filename);
         ihexrec = ihex_rs_from_file(filename);
-        size = check_ihex(ihexrec);
-        if(size== 0)
+        record_size = check_ihex(ihexrec);
+        databuffer = malloc(record_size);
+        if((record_size == 0 ) || (databuffer == NULL))
         {
+        	printf("Unable to proceed. Exiting.\n");
         	return EXIT_FAILURE;
         }
-    	printf("File contains %d bytes of ROM data.\n", (int)size);
+
+		downloaded_size = download_ihex(databuffer,
+										(int)record_size,
+										canspeed,
+										nodeid,
+										LibraryPath);
+		if(downloaded_size != record_size)
+		{
+			printf("Unable to download HEX record.\n");
+			return EXIT_FAILURE;
+		}else
+		{
+			printf("Download successful. Reset your device.\n");
+			return EXIT_SUCCESS;
+		}
     }else
     {
         fusage();
@@ -143,12 +143,25 @@ static ulong_t check_ihex(ihex_recordset_t * rset)
 		{
 			if(last_address != rset->ihrs_records[ctr].ihr_address)
 			{
-				printf("Hex record is not continuous at address 0x%x",rset->ihrs_records[ctr].ihr_address);
+				printf("Hex record is not continuous between address 0x%04x and 0x%04x.\n",
+						last_address,
+						rset->ihrs_records[ctr].ihr_address);
 				return 0;
 			}
 			last_address += rset->ihrs_records[ctr].ihr_length;
 		}
 	}
 	printf("Record is continuous.\n");
+	printf("Record start address is 0x%04x.\n", (int)rset->ihrs_records[0].ihr_address);
+	printf("Record contains %d bytes of ROM data.\n", (int)size);
 	return size;
 }
+
+static void fusage() {
+    printf("LPC via CAN programmer\n");
+    printf("(c) Lyorak 2013\n");
+    printf("Using 3rd party software. See licenses\n");
+    printf("Usage: lpc2can [-s speed] [-n node] file.hex\n");
+    printf("Example: lpc2can -s 125 -n 7d sample.hex\n");
+}
+
